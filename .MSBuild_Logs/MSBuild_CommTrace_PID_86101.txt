@@ -1,0 +1,2 @@
+ (TID 1) 639189731046144180 +     0.276ms: System-wide node count: 0, threshold: 12, this instance has: 0 nodes
+ (TID 1) 639189731046214530 +     7.035ms: System-wide node count: 0, threshold: 12, this instance has: 0 nodes
