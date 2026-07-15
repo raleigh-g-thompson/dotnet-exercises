@@ -1,49 +1,65 @@
-using exercises.Lib;
+using OnboardingProject.Api.Features.Cart.Models;
+using OnboardingProject.Api.Features.Orders.Models;
+using Xunit.Abstractions;
 
-namespace exercises.Tests;
+namespace OnboardingProject.Api.UnitTests.Features.Orders.Models;
 
 public class GenericTests
 {
+    private readonly ITestOutputHelper _output;
+
+    public GenericTests(ITestOutputHelper output) => _output = output;
     // This test teaches how a generic method works, and what happens when you
     // print an object that doesn't override ToString().
     //
     // PrintAll<T> is a generic method — it works with ANY type T. You give it
-    // a List<T> and it walks through each item and calls Console.WriteLine(item).
+    // a List<T> and walks through each item and calls Console.WriteLine(item).
     // The magic is that one method body works for OrderItem, Customer, CartItem,
     // or any other type you can think of.
     //
     // When you call Console.WriteLine on an object, C# secretly calls
     // that object's ToString() method. If the class does NOT override ToString(),
     // the default behavior from System.Object kicks in and just prints the
-    // fully-qualified type name (e.g. "exercises.Lib.OrderItem").
+    // fully-qualified type name (e.g. "OnboardingProject.Api.Features.Orders.Models.OrderItem").
     //
-    // To control what gets printed, you override ToString() in your class
-    // to return whatever string you want — like "Order #5: Widget" or
-    // "Customer: Alice (ID 42)".
+    // NOTE: C# records (like our OrderItem) get a free ToString() that prints
+    // all their properties. Regular classes (like Customer and CartItem) do NOT
+    // — they fall back to the type name unless you override ToString() yourself.
     [Fact]
     public void PrintAll_GenericMethod_PrintsEachItemToConsole()
     {
-        // Capture all console output so we can inspect what was printed.
-        var consoleOut = new StringWriter();
-        Console.SetOut(consoleOut);
+        // A local helper that prints every item in a list.
+        // Works with ANY type T — that is what "generic" means.
+        // Non-static so it can capture _output and the outputLog list.
+        var outputLog = new List<string>();
+
+        void PrintAll<T>(List<T> items)
+        {
+            foreach (var item in items)
+            {
+                var line = item?.ToString() ?? "(null)";
+                outputLog.Add(line);
+                _output.WriteLine(line);
+            }
+        }
 
         // Three different lists, three different types.
         var orders = new List<OrderItem>
         {
-            new(1, "Widget", 2, 10.00m),
-            new(2, "Gadget", 1, 25.00m)
+            new() { OrderItemId = 1, ItemNumberId = "Widget", Quantity = 2, Price = 10.00m },
+            new() { OrderItemId = 2, ItemNumberId = "Gadget", Quantity = 1, Price = 25.00m }
         };
 
         var customers = new List<Customer>
         {
-            new(1, "Alice"),
-            new(2, "Bob")
+            new() { CustomerId = 1 },
+            new() { CustomerId = 2 }
         };
 
         var cartItems = new List<CartItem>
         {
-            new(1, 2),
-            new(2, 1)
+            new() { CartItemId = 1, ItemId = "A", ItemName = "Widget", Quantity = 2 },
+            new() { CartItemId = 2, ItemId = "B", ItemName = "Gadget", Quantity = 1 }
         };
 
         // Call the SAME generic method with three different types.
@@ -51,37 +67,35 @@ public class GenericTests
         //   PrintAll<OrderItem>(orders)  — T = OrderItem
         //   PrintAll<Customer>(customers) — T = Customer
         //   PrintAll<CartItem>(cartItems) — T = CartItem
-        GenericsHelper.PrintAll(orders);
-        GenericsHelper.PrintAll(customers);
-        GenericsHelper.PrintAll(cartItems);
-
-        var output = consoleOut.ToString();
-        var lines = output
-            .Split('\n', StringSplitOptions.RemoveEmptyEntries)
-            .Select(l => l.TrimEnd('\r'))
-            .ToList();
+        PrintAll(orders);
+        PrintAll(customers);
+        PrintAll(cartItems);
 
         // 2 OrderItems + 2 Customers + 2 CartItems = 6 lines printed.
-        Assert.Equal(6, lines.Count);
+        Assert.Equal(6, outputLog.Count);
 
-        // Without a custom ToString(), these classes print their
-        // fully-qualified namespace + type name.
-        Assert.Equal("exercises.Lib.OrderItem", lines[0]);
-        Assert.Equal("exercises.Lib.OrderItem", lines[1]);
-        Assert.Equal("exercises.Lib.Customer", lines[2]);
-        Assert.Equal("exercises.Lib.Customer", lines[3]);
-        Assert.Equal("exercises.Lib.CartItem", lines[4]);
-        Assert.Equal("exercises.Lib.CartItem", lines[5]);
+        // OrderItem is a RECORD — C# gives records a free ToString() that
+        // prints the type name AND all property values. So instead of just
+        // "OrderItem", we get the full property dump. We use StartsWith to
+        // check the short type name prefix.
+        Assert.StartsWith("OrderItem {", outputLog[0]);
+        Assert.StartsWith("OrderItem {", outputLog[1]);
+
+        // Customer and CartItem are regular CLASSES — no ToString() override
+        // means System.Object's default prints just the fully-qualified type name.
+        Assert.Equal("OnboardingProject.Api.Features.Orders.Models.Customer", outputLog[2]);
+        Assert.Equal("OnboardingProject.Api.Features.Orders.Models.Customer", outputLog[3]);
+        Assert.Equal("OnboardingProject.Api.Features.Cart.Models.CartItem", outputLog[4]);
+        Assert.Equal("OnboardingProject.Api.Features.Cart.Models.CartItem", outputLog[5]);
 
         // --- BONUS: controlling what gets printed ---
         // To make objects print nicely, you override the ToString() method.
         // For example, if OrderItem had:
-        //   public override string ToString() => $"{Name} (qty {Quantity})";
+        //   public override string ToString() => $"{ItemNumberId} (qty {Quantity})";
         // Then Console.WriteLine would print "Widget (qty 2)" instead of
-        // "exercises.Lib.OrderItem".
+        // the full property dump.
         //
-        // Try uncommenting the ToString() override in OrderItem.cs and
-        // re-run — you'll see the output change!
+        // Records get this for free — but classes do not!
     }
 
     // This test demonstrates why AreEqual(object, object) is dangerous.
@@ -102,9 +116,16 @@ public class GenericTests
     [Fact]
     public void AreEqual_ObjectVersion_ComparesWithNoTypeSafety()
     {
+        // A local helper that compares any two objects using object.Equals.
+        static bool AreEqual(object a, object b)
+        {
+            return a.Equals(b);
+        }
+
         // Two OrderItems with identical data.
-        var item1 = new OrderItem(1, "Widget", 2, 10.00m);
-        var item2 = new OrderItem(1, "Widget", 2, 10.00m);
+        // OrderItem is a record, so it gets value-based equality for free.
+        var item1 = new OrderItem { OrderItemId = 1, ItemNumberId = "Widget", Quantity = 2, Price = 10.00m };
+        var item2 = new OrderItem { OrderItemId = 1, ItemNumberId = "Widget", Quantity = 2, Price = 10.00m };
 
         // Two decimal prices.
         decimal priceA = 10.00m;
@@ -112,15 +133,15 @@ public class GenericTests
 
         // The object version compiles and runs even for unrelated types.
         // This is the PROBLEM — C# should have caught this mistake!
-        var sameItemAndString = GenericsHelper.AreEqual(item1, "I am a string, not an OrderItem");
+        var sameItemAndString = AreEqual(item1, "I am a string, not an OrderItem");
 
-        // ✅ Same type, same values → true
-        Assert.True(GenericsHelper.AreEqual(item1, item2));
+        // Same type, same values → true (records use value equality)
+        Assert.True(AreEqual(item1, item2));
 
-        // ✅ Same type (decimal), same values → true
-        Assert.True(GenericsHelper.AreEqual(priceA, priceB));
+        // Same type (decimal), same values → true
+        Assert.True(AreEqual(priceA, priceB));
 
-        // ⚠️ OrderItem vs string — compiles but is ALWAYS false.
+        // OrderItem vs string — compiles but is ALWAYS false.
         // The compiler lets this through because both are object.
         Assert.False(sameItemAndString);
     }
@@ -148,30 +169,38 @@ public class GenericTests
     [Fact]
     public void GetLarger_ComparableConstraint_ReturnsLargerValue()
     {
+        // A local helper that returns the larger of two values.
+        // The constraint 'where T : IComparable<T>' ensures T knows how
+        // to compare itself — you cannot pass a type that lacks CompareTo.
+        static T GetLarger<T>(T a, T b) where T : IComparable<T>
+        {
+            return a.CompareTo(b) > 0 ? a : b;
+        }
+
         // --- decimal: compare prices ---
         decimal cheap = 10.00m;
         decimal expensive = 25.00m;
 
-        var largerPrice = GenericsHelper.GetLarger(cheap, expensive);
+        var largerPrice = GetLarger(cheap, expensive);
         Assert.Equal(25.00m, largerPrice);
 
         // --- string: compare lexicographically ---
         // "apple" < "zebra" because 'a' comes before 'z' in the alphabet.
-        var largerString = GenericsHelper.GetLarger("apple", "zebra");
+        var largerString = GetLarger("apple", "zebra");
         Assert.Equal("zebra", largerString);
 
         // --- DateTime: compare dates ---
         var earlier = new DateTime(2024, 1, 1);
         var later = new DateTime(2025, 6, 15);
 
-        var largerDate = GenericsHelper.GetLarger(earlier, later);
+        var largerDate = GetLarger(earlier, later);
         Assert.Equal(later, largerDate);
 
         // --- What if you try a type WITHOUT IComparable<T>? ---
         // OrderItem does NOT implement IComparable<OrderItem> (yet).
         // The line below would NOT COMPILE:
         //
-        //   GenericsHelper.GetLarger(item1, item2);
+        //   GetLarger(item1, item2);
         //
         // Error: "The type OrderItem cannot be used as type parameter T
         // in GetLarger<T>. There is no implicit reference conversion from
@@ -197,36 +226,48 @@ public class GenericTests
     [Fact]
     public void TryGet_DefaultOfT_ReturnsFallbackWhenOutOfBounds()
     {
+        // A local helper that returns the item at an index, or default(T)
+        // if the index is out of bounds — no exception thrown!
+        static T TryGet<T>(List<T> items, int index)
+        {
+            if (index >= 0 && index < items.Count)
+            {
+                return items[index];
+            }
+
+            return default!;
+        }
+
         // --- List<int>: default is 0 ---
         var numbers = new List<int> { 10, 20, 30 };
 
-        Assert.Equal(10, GenericsHelper.TryGet(numbers, 0));   // in bounds
-        Assert.Equal(20, GenericsHelper.TryGet(numbers, 1));   // in bounds
+        Assert.Equal(10, TryGet(numbers, 0));   // in bounds
+        Assert.Equal(20, TryGet(numbers, 1));   // in bounds
 
         // Out of bounds → default(int) = 0  (no exception thrown)
-        Assert.Equal(0, GenericsHelper.TryGet(numbers, 99));
-        Assert.Equal(0, GenericsHelper.TryGet(numbers, -1));
+        Assert.Equal(0, TryGet(numbers, 99));
+        Assert.Equal(0, TryGet(numbers, -1));
 
         // --- List<string>: default is null ---
         var names = new List<string> { "Alice", "Bob" };
 
-        Assert.Equal("Alice", GenericsHelper.TryGet(names, 0));
-        Assert.Equal("Bob", GenericsHelper.TryGet(names, 1));
+        Assert.Equal("Alice", TryGet(names, 0));
+        Assert.Equal("Bob", TryGet(names, 1));
 
         // Out of bounds → default(string) = null
-        Assert.Null(GenericsHelper.TryGet(names, 99));
+        Assert.Null(TryGet(names, 99));
 
         // --- List<OrderItem>: default is null (reference type) ---
         var items = new List<OrderItem>
         {
-            new(1, "Widget", 2, 10.00m)
+            new() { OrderItemId = 1, ItemNumberId = "Widget", Quantity = 2, Price = 10.00m }
         };
 
-        Assert.NotNull(GenericsHelper.TryGet(items, 0));
-        Assert.Equal("Widget", GenericsHelper.TryGet(items, 0)!.Name);
+        Assert.NotNull(TryGet(items, 0));
+        Assert.Equal("Widget", TryGet(items, 0)!.ItemNumberId);
 
         // Out of bounds → default(OrderItem) = null
-        Assert.Null(GenericsHelper.TryGet(items, 99));
+        Assert.Null(TryGet(items, 99));
     }
 
     // This test teaches how the generic version with a constraint fixes
@@ -235,10 +276,11 @@ public class GenericTests
     // The constraint 'where T : IEquatable<T>' says: "T must be a type
     // that knows how to compare itself to another T." Types like decimal,
     // int, and string already know how (they implement IEquatable<T>
-    // built-in). Our OrderItem also knows now (we added it above).
+    // built-in). Our OrderItem also knows — being a record, C# auto-generates
+    // value-based equality that implements IEquatable<OrderItem>.
     //
     // What the generic version prevents:
-    //   1. ← COMPILE ERROR: AreEqual<OrderItem>(orderItem, "hello")
+    //   1. COMPILE ERROR: AreEqual<OrderItem>(orderItem, "hello")
     //      The compiler infers T as OrderItem from the first argument,
     //      then sees "hello" is a string (not an OrderItem) and says
     //      "No, these types don't match!" — caught at build time.
@@ -248,29 +290,37 @@ public class GenericTests
     [Fact]
     public void AreEqual_GenericVersion_RequiresSameTypeAndIEquatable()
     {
-        var item1 = new OrderItem(1, "Widget", 2, 10.00m);
-        var item2 = new OrderItem(1, "Widget", 2, 10.00m);
+        // A local helper that compares two values using IEquatable<T>.
+        // The constraint ensures T implements IEquatable<T> — a compile-time
+        // guarantee that Equals is available without boxing.
+        static bool AreEqual<T>(T a, T b) where T : IEquatable<T>
+        {
+            return a.Equals(b);
+        }
+
+        var item1 = new OrderItem { OrderItemId = 1, ItemNumberId = "Widget", Quantity = 2, Price = 10.00m };
+        var item2 = new OrderItem { OrderItemId = 1, ItemNumberId = "Widget", Quantity = 2, Price = 10.00m };
 
         decimal priceA = 10.00m;
         decimal priceB = 10.00m;
 
-        // ✅ Same type (OrderItem), same values → true.
-        // OrderItem implements IEquatable<OrderItem>, so it satisfies
-        // the constraint.
-        Assert.True(GenericsHelper.AreEqual(item1, item2));
+        // Same type (OrderItem), same values → true.
+        // OrderItem is a record and auto-implements IEquatable<OrderItem>,
+        // so it satisfies the constraint.
+        Assert.True(AreEqual(item1, item2));
 
-        // ✅ Same type (decimal), same values → true.
+        // Same type (decimal), same values → true.
         // decimal implements IEquatable<decimal>, no boxing occurs.
-        Assert.True(GenericsHelper.AreEqual(priceA, priceB));
+        Assert.True(AreEqual(priceA, priceB));
 
         // The line below would NOT COMPILE — try uncommenting it:
         //
-        //   GenericsHelper.AreEqual(item1, "I am a string");
+        //   AreEqual(item1, "I am a string");
         //
         // Error: "cannot be inferred from usage" or "type string cannot
         // be used as type parameter T in AreEqual<T>". The compiler
         // sees that the first arg is OrderItem (T = OrderItem) and the
-        // second arg is string — NOT an OrderItem — so it refuses to
+        // second arg is a string — NOT an OrderItem — so it refuses to
         // build. Bug caught before the program ever runs!
     }
 
@@ -301,8 +351,8 @@ public class GenericTests
         // Setup: a list of OrderItems.
         var items = new List<OrderItem>
         {
-            new(1, "Widget", 2, 10.00m),
-            new(2, "Gadget", 1, 25.00m)
+            new() { OrderItemId = 1, ItemNumberId = "Widget", Quantity = 2, Price = 10.00m },
+            new() { OrderItemId = 2, ItemNumberId = "Gadget", Quantity = 1, Price = 25.00m }
         };
 
         // --- These compile because the interfaces are covariant (out T) ---
@@ -367,39 +417,71 @@ public class GenericTests
     // This is how JSON serializers (System.Text.Json), ORMs (EF Core),
     // debuggers, and UI builders work — they use reflection to handle
     // types they never knew about when the code was compiled.
+    // A test-only Address class — this type does not exist in the production
+    // code, but we need it to demonstrate that reflection works on ANY type.
+    // Defined at the class level because C# does not support local types inside methods.
+    private class Address
+    {
+        public string Street { get; set; } = "";
+        public string City { get; set; } = "";
+        public string State { get; set; } = "";
+        public string ZipCode { get; set; } = "";
+    }
+
     [Fact]
     public void PrintProperties_UsesReflectionToInspectAnyType()
     {
-        var consoleOut = new StringWriter();
-        Console.SetOut(consoleOut);
+        // A local helper that uses reflection to discover and print every
+        // public property on any object. It does not care what T is — it
+        // uses typeof(T).GetProperties() to ask the runtime "what properties
+        // does this type have?" and then reads each one.
+        // Non-static so it can capture _output and the outputLog list.
+        var outputLog = new List<string>();
 
-        var orderItem = new OrderItem(1, "Widget", 2, 10.00m);
-        var customer = new Customer(42, "Alice");
-        var cartItem = new CartItem(5, 3);
-        var address = new Address("123 Main St", "Portland", "OR", "97201");
+        void PrintProperties<T>(T obj)
+        {
+            var type = typeof(T);
+            var properties = type.GetProperties();
 
-        GenericsHelper.PrintProperties(orderItem);
-        GenericsHelper.PrintProperties(customer);
-        GenericsHelper.PrintProperties(cartItem);
-        GenericsHelper.PrintProperties(address);
+            var header = $"{type.Name}:";
+            outputLog.Add(header);
+            _output.WriteLine(header);
 
-        var output = consoleOut.ToString();
+            foreach (var prop in properties)
+            {
+                var value = prop.GetValue(obj);
+                var line = $"  {prop.Name} = {value ?? "(null)"}";
+                outputLog.Add(line);
+                _output.WriteLine(line);
+            }
+        }
 
-        // --- OrderItem ---
+        var orderItem = new OrderItem { OrderItemId = 1, ItemNumberId = "Widget", Quantity = 2, Price = 10.00m };
+        var customer = new Customer { CustomerId = 42 };
+        var cartItem = new CartItem { CartItemId = 5, ItemId = "A", ItemName = "Widget", Quantity = 3 };
+        var address = new Address { Street = "123 Main St", City = "Portland", State = "OR", ZipCode = "97201" };
+
+        PrintProperties(orderItem);
+        PrintProperties(customer);
+        PrintProperties(cartItem);
+        PrintProperties(address);
+
+        var output = string.Join("\n", outputLog);
+
+        // --- OrderItem (record) ---
         Assert.Contains("OrderItem:", output);
-        Assert.Contains("ItemId = 1", output);
-        Assert.Contains("Name = Widget", output);
+        Assert.Contains("OrderItemId = 1", output);
+        Assert.Contains("ItemNumberId = Widget", output);
         Assert.Contains("Quantity = 2", output);
-        Assert.Contains("UnitPrice = 10.00", output);
+        Assert.Contains("Price = 10.00", output);
 
         // --- Customer ---
         Assert.Contains("Customer:", output);
-        Assert.Contains("Id = 42", output);
-        Assert.Contains("Name = Alice", output);
+        Assert.Contains("CustomerId = 42", output);
 
         // --- CartItem ---
         Assert.Contains("CartItem:", output);
-        Assert.Contains("ItemId = 5", output);
+        Assert.Contains("CartItemId = 5", output);
         Assert.Contains("Quantity = 3", output);
 
         // --- Address ---

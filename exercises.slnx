@@ -1,5 +1,4 @@
 <Solution>
-  <Project Path="src/exercises/exercises.csproj" />
-  <Project Path="src/exercises.Lib/exercises.Lib.csproj" />
-  <Project Path="tests/exercises.Tests/exercises.Tests.csproj" />
+  <Project Path="src/OnboardingProject.Api/OnboardingProject.Api.csproj" />
+  <Project Path="tests/OnboardingProject.Api.UnitTests/OnboardingProject.Api.UnitTests.csproj" />
 </Solution>

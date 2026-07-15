@@ -1,9 +1,14 @@
-using exercises.Lib;
+using OnboardingProject.Api.Features.Cart.Models;
+using OnboardingProject.Api.Features.Orders.Models;
+using Xunit.Abstractions;
 
-namespace exercises.Tests;
+namespace OnboardingProject.Api.UnitTests.Features.Orders.Models;
 
 public class LinqTests
 {
+    private readonly ITestOutputHelper _output;
+
+    public LinqTests(ITestOutputHelper output) => _output = output;
     // This test teaches how SelectMany works.
     // Imagine you have several shopping carts (Orders), and each shopping cart
     // holds a list of items (OrderItems). You want to dump ALL items from ALL
@@ -15,40 +20,44 @@ public class LinqTests
         // First we build two pretend shopping orders, like two people ordering stuff.
         // Alice buys a Widget (qty 2) and a Gadget (qty 1).
         // Bob buys a Doohickey (qty 5).
-        // Each Order has its own Items list tucked inside it.
+        // Each Order has its own OrderItems list tucked inside it.
         var orders = new List<Order>
         {
-            new(1, "Alice")
+            new()
             {
-                Items =
+                OrderId = 1,
+                Customer = new() { CustomerId = 1 },
+                OrderItems =
                 [
-                    new(1, "Widget", 2, 10.00m),
-                    new(2, "Gadget", 1, 25.00m)
+                    new() { OrderItemId = 1, ItemNumberId = "Widget", Quantity = 2, Price = 10.00m },
+                    new() { OrderItemId = 2, ItemNumberId = "Gadget", Quantity = 1, Price = 25.00m }
                 ]
             },
-            new(2, "Bob")
+            new()
             {
-                Items =
+                OrderId = 2,
+                Customer = new() { CustomerId = 2 },
+                OrderItems =
                 [
-                    new(3, "Doohickey", 5, 3.50m)
+                    new() { OrderItemId = 3, ItemNumberId = "Doohickey", Quantity = 5, Price = 3.50m }
                 ]
             }
         };
 
         // Here is the LINQ magic: SelectMany.
-        // For each Order in the list, it reaches inside and grabs the Items list,
+        // For each Order in the list, it reaches inside and grabs the OrderItems list,
         // then smashes all those little lists together into one big flat list.
         // Without SelectMany we would get a "list of lists" — hard to work with.
         // With SelectMany we get one simple list of all OrderItems across all Orders.
-        var allItems = orders.SelectMany(o => o.Items).ToList();
+        var allItems = orders.SelectMany(o => o.OrderItems).ToList();
 
         // Alice had 2 items + Bob had 1 item = 3 items total in the flat list.
         Assert.Equal(3, allItems.Count);
 
-        // Make sure each item name survived the flattening and is in the final list.
-        Assert.Contains(allItems, i => i is { Name: "Widget" });
-        Assert.Contains(allItems, i => i is { Name: "Gadget" });
-        Assert.Contains(allItems, i => i is { Name: "Doohickey" });
+        // Make sure each item number survived the flattening and is in the final list.
+        Assert.Contains(allItems, i => i is { ItemNumberId: "Widget" });
+        Assert.Contains(allItems, i => i is { ItemNumberId: "Gadget" });
+        Assert.Contains(allItems, i => i is { ItemNumberId: "Doohickey" });
     }
 
     // This test teaches how paging (pagination) works with Skip and Take.
@@ -60,42 +69,57 @@ public class LinqTests
     [Fact]
     public void Pagination_SkipAndTake_ReturnsCorrectPage()
     {
-        // Make 100 pretend items with ItemId 0 through 99.
+        // Local helper that returns a single page from a list.
+        // Skip jumps over the items before this page, Take grabs just this page.
+        static List<T> GetPage<T>(List<T> source, int pageNumber, int pageSize)
+        {
+            return source
+                .Skip((pageNumber - 1) * pageSize)
+                .Take(pageSize)
+                .ToList();
+        }
+
+        // Make 100 pretend items with OrderItemId 0 through 99.
         var items = Enumerable
             .Range(0, 100)
-            .Select(i => new OrderItem(i, $"Item {i}", 1, 1.00m))
+            .Select(i => new OrderItem { OrderItemId = i, ItemNumberId = $"Item {i}", Quantity = 1, Price = 1.00m })
             .ToList();
 
         // Page 1 with 10 items per page: skip nothing, take 10.
-        // So we expect ItemId 0, 1, 2, ..., 9.
-        var page1 = PaginationHelper.GetPage(items, pageNumber: 1, pageSize: 10);
+        // So we expect OrderItemId 0, 1, 2, ..., 9.
+        var page1 = GetPage(items, pageNumber: 1, pageSize: 10);
 
         Assert.Equal(10, page1.Count);
-        Assert.Equal(0, page1[0].ItemId);
-        Assert.Equal(9, page1[^1].ItemId);
+        Assert.Equal(0, page1[0].OrderItemId);
+        Assert.Equal(9, page1[^1].OrderItemId);
 
         // Page 2 with 10 items per page: skip the first 10, take the next 10.
-        // So we expect ItemId 10, 11, 12, ..., 19.
-        var page2 = PaginationHelper.GetPage(items, pageNumber: 2, pageSize: 10);
+        // So we expect OrderItemId 10, 11, 12, ..., 19.
+        var page2 = GetPage(items, pageNumber: 2, pageSize: 10);
 
         Assert.Equal(10, page2.Count);
-        Assert.Equal(10, page2[0].ItemId);
-        Assert.Equal(19, page2[^1].ItemId);
+        Assert.Equal(10, page2[0].OrderItemId);
+        Assert.Equal(19, page2[^1].OrderItemId);
 
         // Page 10 with 10 items per page: the last page has items 90-99.
-        var page10 = PaginationHelper.GetPage(items, pageNumber: 10, pageSize: 10);
+        var page10 = GetPage(items, pageNumber: 10, pageSize: 10);
 
         Assert.Equal(10, page10.Count);
-        Assert.Equal(90, page10[0].ItemId);
-        Assert.Equal(99, page10[^1].ItemId);
+        Assert.Equal(90, page10[0].OrderItemId);
+        Assert.Equal(99, page10[^1].OrderItemId);
 
         // Page 11 with 10 items per page: there are only 100 items, so
         // page 11 asks for items 100-109 which do not exist. We get an
         // empty list — that is how pagination says "no more pages".
-        var page11 = PaginationHelper.GetPage(items, pageNumber: 11, pageSize: 10);
+        var page11 = GetPage(items, pageNumber: 11, pageSize: 10);
 
         Assert.Empty(page11);
     }
+
+    // A test-only record to represent a priced item — this type does not exist
+    // in the production code, but we need it to teach set operations.
+    // Defined at the class level because C# does not support local types inside methods.
+    private record ItemPrice(int ItemId, decimal Price);
 
     // This test teaches set operations: Intersect, Except, and Union.
     // Imagine you have two lists of toy IDs. One list is the toys in your
@@ -106,14 +130,15 @@ public class LinqTests
     [Fact]
     public void SetOperations_IntersectExceptUnion_ReturnsCorrectIds()
     {
+
         // The IDs of items sitting in someone's shopping cart.
         // They want to buy items 1, 2, 3, and 4.
         var cartItems = new List<CartItem>
         {
-            new(1, 2),
-            new(2, 1),
-            new(3, 5),
-            new(4, 1)
+            new() { CartItemId = 1, ItemId = "A", ItemName = "Widget", Quantity = 2 },
+            new() { CartItemId = 2, ItemId = "B", ItemName = "Gadget", Quantity = 1 },
+            new() { CartItemId = 3, ItemId = "C", ItemName = "Doohickey", Quantity = 5 },
+            new() { CartItemId = 4, ItemId = "D", ItemName = "Thingamajig", Quantity = 1 }
         };
 
         // The IDs of items that have a price in the system.
@@ -126,7 +151,9 @@ public class LinqTests
         };
 
         // Pull out just the ID numbers so we can compare plain lists.
-        var cartIds = cartItems.Select(c => c.ItemId);
+        // We use CartItemId (int) for set operations — ItemId is a string
+        // and would not match the int IDs in the pricing list.
+        var cartIds = cartItems.Select(c => c.CartItemId);
         var pricingIds = pricing.Select(p => p.ItemId);
 
         // Intersect: which IDs are in BOTH the cart AND the pricing list?
@@ -183,52 +210,59 @@ public class LinqTests
     //    results into a real list. A list is like a bucket — it holds the filtered
     //    items so you can look at them over and over without re-running the filter.
     //    Example:
-    //      var expensive = FilterHelper.FilterExpensiveItems(items).ToList();
+    //      var expensive = FilterExpensiveItems(items).ToList();
     //    Then .Count(), .Sum(), and foreach all read from the same snapshot.
     [Fact]
     public void MultipleEnumeration_FilterRunsOncePerEnumeration()
     {
+        // A local helper that returns items costing more than $5.
+        // Each time the filter is evaluated, it records the item ID in a list
+        // so we can COUNT how many times each item is inspected — proof that
+        // the filter re-runs on every enumeration.
+        var filterLog = new List<int>();
+
+        IEnumerable<OrderItem> FilterExpensiveItems(List<OrderItem> source)
+        {
+            return source.Where(item =>
+            {
+                filterLog.Add(item.OrderItemId);
+                _output.WriteLine($"Filtering {item.OrderItemId}");
+                return item.Price > 5.00m;
+            });
+        }
+
         // Five items: three cheap (<=5) and two expensive (>5).
         var items = new List<OrderItem>
         {
-            new(1, "Ball", 1, 3.00m),
-            new(2, "Car", 1, 7.00m),
-            new(3, "Doll", 1, 4.00m),
-            new(4, "Plane", 1, 8.00m),
-            new(5, "Bike", 1, 6.50m)
+            new() { OrderItemId = 1, ItemNumberId = "Ball", Quantity = 1, Price = 3.00m },
+            new() { OrderItemId = 2, ItemNumberId = "Car", Quantity = 1, Price = 7.00m },
+            new() { OrderItemId = 3, ItemNumberId = "Doll", Quantity = 1, Price = 4.00m },
+            new() { OrderItemId = 4, ItemNumberId = "Plane", Quantity = 1, Price = 8.00m },
+            new() { OrderItemId = 5, ItemNumberId = "Bike", Quantity = 1, Price = 6.50m }
         };
-
-        // Capture everything printed to the console so we can count how many
-        // times each item was filtered.
-        var consoleOut = new StringWriter();
-        Console.SetOut(consoleOut);
 
         // This does NOT run the filter yet — IEnumerable is lazy.
         // It just sets up the pipeline: "when someone asks for items,
         // check if each one is expensive."
-        var expensive = FilterHelper.FilterExpensiveItems(items);
+        var expensive = FilterExpensiveItems(items);
 
         // First enumeration: Count() walks the whole list, running the filter
-        // on every item. Expect 2 expensive items (Car=7, Plane=8, Bike=6.50).
+        // on every item. Expect 3 expensive items (Car=7, Plane=8, Bike=6.50).
         Assert.Equal(3, expensive.Count());
 
         // Second enumeration: Sum() walks the whole list AGAIN, re-running
         // the filter on every item from scratch.
-        Assert.Equal(21.50m, expensive.Sum(i => i.UnitPrice));
+        Assert.Equal(21.50m, expensive.Sum(i => i.Price));
 
         // Third enumeration: the foreach walks the whole list YET AGAIN.
         foreach (var item in expensive)
         {
-            Console.WriteLine($"  -> {item.ItemId}");
+            _output.WriteLine($"  -> {item.OrderItemId}");
         }
 
         // Each of the 5 items was filtered 3 times (once per enumeration),
-        // so the console should say "Filtering 1" through "Filtering 5"
-        // three times each = 15 lines, plus the 3 print lines from the foreach.
-        var output = consoleOut.ToString();
-        var filterCount = output.Split('\n').Count(l => l.StartsWith("Filtering "));
-
-        Assert.Equal(15, filterCount);
+        // so the log should have 15 entries (5 items × 3 passes).
+        Assert.Equal(15, filterLog.Count);
     }
 
     // This test teaches how Aggregate works (also called "fold" or "reduce").
@@ -245,10 +279,10 @@ public class LinqTests
         // Three items with different prices and quantities.
         var items = new List<OrderItem>
         {
-            new(1, "Ball", 2, 3.00m),     // 2 ×  $3.00 =  $6.00
-            new(2, "Car", 1, 7.00m),      // 1 ×  $7.00 =  $7.00
-            new(3, "Plane", 3, 8.00m)     // 3 ×  $8.00 = $24.00
-        };                                 // Total:       $37.00
+            new() { OrderItemId = 1, ItemNumberId = "Ball", Quantity = 2, Price = 3.00m },     // 2 ×  $3.00 =  $6.00
+            new() { OrderItemId = 2, ItemNumberId = "Car", Quantity = 1, Price = 7.00m },      // 1 ×  $7.00 =  $7.00
+            new() { OrderItemId = 3, ItemNumberId = "Plane", Quantity = 3, Price = 8.00m }     // 3 ×  $8.00 = $24.00
+        };                                                                                      // Total:       $37.00
 
         // Aggregate walks the list one item at a time. It keeps a "running
         // total" in a variable called 'acc' (short for accumulator). On the
@@ -257,7 +291,7 @@ public class LinqTests
         // acc = 13.00 + 24.00 = 37.00. That final value is the result.
         var total = items.Aggregate(
             0m,
-            (acc, item) => acc + item.UnitPrice * item.Quantity
+            (acc, item) => acc + item.Price * item.Quantity
         );
 
         Assert.Equal(37.00m, total);
