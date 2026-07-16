@@ -133,6 +133,41 @@ public class CollectionsTests
     }
 
     // List is slow for mid-list insertions and removals because it shifts elements.
+    //
+    // Follow-up Q&A (ELI5):
+    //
+    // Q: Why are middle insertions and removals slow on a List<T>?
+    //    Think about what has to happen internally when you insert at position
+    //    500 in a list of 100,000 items.
+    // A: A List<T> is backed by a single contiguous array in memory — think
+    //    of it as a row of numbered mailboxes all next to each other. To INSERT
+    //    at position 500, the list must:
+    //      1. Make room by shifting EVERY item from position 500 onward one
+    //         spot to the right (positions 500→501, 501→502, ..., 99999→100000).
+    //      2. That is 99,500 elements being copied in memory.
+    //    To REMOVE at position 500, the reverse happens — every item after
+    //    position 500 shifts LEFT to fill the gap (501→500, 502→501, ...).
+    //    Both operations are O(n) — the cost grows linearly with the list
+    //    size. A list of 200,000 items would be ~2× slower than 100,000.
+    //
+    // Q: Research what other collection type in .NET is specifically designed
+    //    for fast insertions and removals at arbitrary positions. What trade-off
+    //    does it achieve this?
+    // A: LinkedList<T> — a doubly-linked list where each element (node) holds
+    //    a value plus pointers to the previous and next nodes. Inserting or
+    //    removing at a known node is O(1) because you just update the two
+    //    neighboring pointers — no shifting at all.
+    //
+    //    The TRADE-OFF is lookup: LinkedList<T> has no indexing. You cannot
+    //    say list[500] and get an answer in O(1). To find the 500th element,
+    //    you must start at the head and follow 500 pointers — that is O(n).
+    //    List<T> can jump directly to any index in O(1) because array
+    //    indexing is just pointer arithmetic: base_address + index × element_size.
+    //
+    //    Summary:
+    //      List<T>         → fast index (O(1)), slow insert/remove middle (O(n))
+    //      LinkedList<T>   → slow index (O(n)), fast insert/remove at node (O(1))
+    //      HashSet<T>      → fast add/remove (O(1)), no index, no ordering
     [Fact]
     public void FrequentInsertionsAndRemovals_ListIsSlowForMidOperations()
     {
@@ -168,6 +203,28 @@ public class CollectionsTests
     }
 
     // Dictionary lookups are O(1) — much faster than List linear search which is O(n).
+    //
+    // Follow-up Q&A (ELI5):
+    //
+    // Q: When would you choose a List<T> over a Dictionary<K,V> for lookups?
+    // A: Use a List when:
+    //      - You need to iterate in order (Dictionary has no guaranteed order).
+    //      - You need index-based access (list[0], list[^1]).
+    //      - You rarely look up by key — the overhead of building a Dictionary
+    //        is not worth it if you only search a few times.
+    //      - Memory is tight — Dictionary uses extra memory for its hash table.
+    //    Use a Dictionary when:
+    //      - You frequently look up by a unique key (OrderItemId, SKU, etc.).
+    //      - You need O(1) lookups, insertions, and removals by key.
+    //      - You want to enforce key uniqueness (no duplicate keys allowed).
+    //
+    // Q: What is the time complexity difference?
+    // A: For n items and m lookups:
+    //      List linear search:  O(n) per lookup × m lookups = O(n × m)
+    //      Dictionary lookup:  O(1) per lookup × m lookups = O(m)
+    //    With n = 10,000 and m = 10,000:
+    //      List: up to 100 million comparisons
+    //      Dictionary: ~10,000 hash computations
     [Fact]
     public void DictionaryLookupsVsListSearching_O1BeatsOn()
     {
@@ -230,6 +287,15 @@ public class CollectionsTests
     private record ItemPrice(int ItemId, decimal Price);
 
     // Picking the right collection for each job.
+    //
+    // This test teaches you to pick the RIGHT collection for each job.
+    // Not all collections are the same — a screwdriver and a hammer are
+    // both tools, but you would not use a hammer to turn a screw! Same
+    // idea: List, Dictionary, HashSet, Queue, and IReadOnlyList each
+    // shine in different situations.
+    //
+    // For each scenario below, we explain WHY a specific collection is
+    // the best choice, then show it working with real code.
     [Fact]
     public void ChoosingTheRightCollection_MatchCollectionToScenario()
     {

@@ -273,10 +273,41 @@ public class AsyncAwaitTests
         var innerException = failingTask.Exception?.InnerException as InvalidOperationException;
         Assert.NotNull(innerException);
         Assert.Contains("not found in the database", innerException.Message);
+
+        // ---------------------------------------------------------------
+        // THE LESSON:
+        //
+        // Always await your async calls! If you intentionally want to fire
+        // and forget (rare), use a discard and a comment:
+        //
+        //   _ = SomeAsyncWork(); // Intentional fire-and-forget: reason here
+        //
+        // This makes it clear the missing await is deliberate, not a bug.
+        // ---------------------------------------------------------------
     }
 
     // Exercise 5: Exception handling with Task.WhenAll.
     // When multiple tasks throw, Task.WhenAll wraps them in one AggregateException.
+    //
+    // Follow-up Q&A (ELI5):
+    //
+    // Q: When multiple tasks throw exceptions inside Task.WhenAll, what
+    //    exception do you catch?
+    // A: You catch an AggregateException. Think of it like a shopping bag
+    //    that holds all the broken items. Task.WhenAll does NOT throw the
+    //    first error and stop — it waits for EVERY task to finish, then
+    //    stuffs all the errors into one AggregateException and throws that.
+    //
+    // Q: How do you access all of the exceptions, not just the first one?
+    // A: Use the InnerExceptions property — it is a list of every exception
+    //    that was thrown. You can also call .Flatten() to unwrap nested
+    //    AggregateExceptions (useful when tasks themselves use Task.WhenAll).
+    //
+    // Q: What happens if you await the individual tasks after Task.WhenAll
+    //    throws? Does re-awaiting a faulted task throw again?
+    // A: YES! Each faulted task remembers its exception. When you await it
+    //    again, it throws the ORIGINAL exception (not wrapped in Aggregate).
+    //    This lets you handle each failure specifically with its own catch block.
     [Fact]
     public async Task Exercise5_ExceptionHandling()
     {
@@ -332,6 +363,31 @@ public class AsyncAwaitTests
         var priceEx = await Assert.ThrowsAsync<InvalidOperationException>(
             () => FetchItemPricesAsync());
         Assert.Equal("Pricing service unavailable", priceEx.Message);
+
+        // ---------------------------------------------------------------
+        // THE LESSON:
+        //
+        // 1. Task.WhenAll wraps ALL failures in ONE AggregateException.
+        //    You catch that, not the individual errors.
+        //
+        // 2. Use .InnerExceptions to see every error, or .Flatten() to
+        //    simplify nested cases.
+        //
+        // 3. Re-awaiting individual faulted tasks throws the ORIGINAL
+        //    exception unwrapped — so you can handle each one specifically.
+        //
+        // Common pattern:
+        //
+        //   try {
+        //       await Task.WhenAll(task1, task2, task3);
+        //   } catch (AggregateException ae) {
+        //       foreach (var ex in ae.Flatten().InnerExceptions) {
+        //           if (ex is TimeoutException te) { /* handle timeout */ }
+        //           else if (ex is InvalidOperationException io) { /* handle */ }
+        //           else { /* unexpected */ }
+        //       }
+        //   }
+        // ---------------------------------------------------------------
     }
 
     // Exercise 6: Fire-and-forget pitfalls.
@@ -387,10 +443,53 @@ public class AsyncAwaitTests
             _output.WriteLine($"Caught and handled: {ex.Message}");
             Assert.Equal("Audit log write failed: disk full", ex.Message);
         }
+
+        // ---------------------------------------------------------------
+        // THE LESSON:
+        //
+        // 1. async Task + fire-and-forget = exception silently swallowed.
+        //    No crash, but also no handling. The Task sits in a faulted
+        //    state and nobody looks at it. Acceptable ONLY for truly
+        //    optional work where failure is safe to ignore.
+        //
+        // 2. async void + fire-and-forget = CRASHES THE PROCESS.
+        //    The exception hits UnhandledException and terminates the
+        //    app. There is no try/catch that can save you. Never use
+        //    async void for background work you control.
+        //
+        // 3. Safe pattern: always return Task. Either await it, or keep
+        //    the Task reference and observe it explicitly — via await
+        //    in a try/catch, via .ContinueWith for logging, or via a
+        //    centralized tracker that drains at shutdown.
+        //
+        // When is fire-and-forget acceptable?
+        //
+        //   - The work is TRULY optional (telemetry, audit logging).
+        //   - Failure is safe to ignore (no data corruption).
+        //   - The operation completes within the process lifetime.
+        //
+        // If any of those don't hold, await the task or hand it to a
+        // tracker that will observe it.
+        // ---------------------------------------------------------------
     }
 
     // Exercise 7: Async streams.
     // IAsyncEnumerable lets you yield items one at a time with await.
+    //
+    // What if you have a LOT of items and you want to process them as they
+    // arrive — not wait for all of them to be collected first?
+    //
+    // Normally, an async method returns Task<T> where T is the WHOLE result.
+    // That means you wait until every single item is ready before you see
+    // ANY of them. But sometimes items arrive one at a time (like rows from
+    // a database, or products from a warehouse scan), and you want to start
+    // working on the first one while the rest are still being fetched.
+    //
+    // C# has a language feature for this: IAsyncEnumerable<T> — the async
+    // version of IEnumerable<T>. You produce items with "yield return" inside
+    // an "async" method, and the consumer iterates with "await foreach".
+    // Each item is yielded one at a time; the caller pulls the next one only
+    // when it is ready.
     [Fact]
     public async Task Exercise7_AsyncStreams()
     {
@@ -431,6 +530,35 @@ public class AsyncAwaitTests
         }
 
         Assert.Equal(2, partialItems.Count);
+
+        // ---------------------------------------------------------------
+        // THE LESSON:
+        //
+        // 1. async IAsyncEnumerable<T> + yield return = produce items
+        //    one at a time, asynchronously. The caller pulls each item;
+        //    you await between yields.
+        //
+        // 2. "await foreach" = consume an async stream. It calls
+        //    MoveNextAsync() each iteration and DisposeAsync() when done
+        //    (even on break or exception).
+        //
+        // 3. Memory: only one item is in memory at a time (plus the
+        //    producer's state machine). The whole collection is never
+        //    buffered — unlike Task<List<T>> which holds everything.
+        //
+        // 4. Early exit: "break" inside "await foreach" stops the stream
+        //    and triggers DisposeAsync() on the enumerator — resources are
+        //    always cleaned up even if the producer does not have a
+        //    finally block.
+        //
+        // 5. Use IAsyncEnumerable<T> when:
+        //    - You have many items (or an unknown/unbounded number).
+        //    - Producing each item involves async I/O.
+        //    - You want to start processing before the last item arrives.
+        //
+        // If all items are already in memory, use a regular List<T> and
+        // foreach. IAsyncEnumerable is for items that arrive over time.
+        // ---------------------------------------------------------------
     }
 
     // Exercise 8: Async disposal with IAsyncDisposable.
@@ -457,5 +585,37 @@ public class AsyncAwaitTests
         Assert.Equal(42.50m, checkoutPrice);
 
         // DisposeAsync runs when this method exits.
+
+        // ---------------------------------------------------------------
+        // THE LESSON:
+        //
+        // 1. Constructors CANNOT be async. They must return `this`
+        //    synchronously. Use an async factory method (static CreateAsync)
+        //    to do async initialization — the caller awaits it and gets a
+        //    fully-ready object.
+        //
+        // 2. IAsyncDisposable is the async version of IDisposable. It
+        //    declares `ValueTask DisposeAsync()`. Use it when cleanup
+        //    involves I/O (closing connections, flushing buffers, etc).
+        //
+        // 3. "await using var x = ...;" scopes disposal to the end of the
+        //    enclosing method — just like "using var x = ...;" but async.
+        //
+        // 4. Under the hood, "await using" generates a try/finally that
+        //    calls DisposeAsync().
+        //
+        // 5. DisposeAsync() runs even if an exception is thrown. Resources
+        //    are always cleaned up — same safety as synchronous "using".
+        //
+        // 6. Return ValueTask (not Task) from DisposeAsync(). Disposal
+        //    often completes synchronously — ValueTask avoids a Task
+        //    allocation on that common path.
+        //
+        // 7. IDisposable vs IAsyncDisposable:
+        //    - IDisposable:       void Dispose()          — synchronous
+        //    - IAsyncDisposable:  ValueTask DisposeAsync() — async
+        //    - Use "using" for the first, "await using" for the second.
+        //    - Many classes implement BOTH, so callers can choose.
+        // ---------------------------------------------------------------
     }
 }
