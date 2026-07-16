@@ -1,4 +1,0 @@
-<Solution>
-  <Project Path="src/OnboardingProject.Api/OnboardingProject.Api.csproj" />
-  <Project Path="tests/OnboardingProject.Api.UnitTests/OnboardingProject.Api.UnitTests.csproj" />
-</Solution>

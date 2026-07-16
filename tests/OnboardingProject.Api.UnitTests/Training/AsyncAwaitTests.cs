@@ -170,10 +170,10 @@ public class AsyncAwaitTests
             await Task.Delay(200);
             return itemId switch
             {
-                "ITEM-A" => new ItemPrice(itemId, 9.99m),
-                "ITEM-B" => new ItemPrice(itemId, 24.50m),
-                "ITEM-C" => new ItemPrice(itemId, 3.75m),
-                _ => new ItemPrice(itemId, 0m)
+                "ITEM-A" => new ItemPrice { ItemId = itemId, BasePrice = 9.99m },
+                "ITEM-B" => new ItemPrice { ItemId = itemId, BasePrice = 24.50m },
+                "ITEM-C" => new ItemPrice { ItemId = itemId, BasePrice = 3.75m },
+                _ => new ItemPrice { ItemId = itemId, BasePrice = 0m }
             };
         }
 
